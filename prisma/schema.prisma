@@ -1,0 +1,393 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model audit_logs {
+  log_id       Int      @id @default(autoincrement())
+  user_id      Int?
+  action       String   @db.VarChar(100)
+  target_table String?  @db.VarChar(50)
+  target_id    Int?
+  old_value    String?  @db.Text
+  new_value    String?  @db.Text
+  created_at   DateTime @default(now()) @db.Timestamp(0)
+
+  @@index([action], map: "idx_audit_logs_action")
+  @@index([created_at], map: "idx_audit_logs_created")
+  @@index([target_table], map: "idx_audit_logs_table")
+  @@index([target_table, target_id], map: "idx_audit_logs_table_id")
+  @@index([user_id], map: "idx_audit_logs_user")
+}
+
+model departments {
+  department_id        Int                    @id @default(autoincrement())
+  department_name      String                 @db.VarChar(100)
+  created_at           DateTime               @default(now()) @db.Timestamp(0)
+  form_assignments     form_assignments[]
+  form_responses       form_responses[]
+  form_submission_logs form_submission_logs[]
+  invites              invites[]
+  users                users[]
+}
+
+model file_download_logs {
+  download_id    Int            @id @default(autoincrement())
+  user_id        Int
+  response_id    Int
+  file_path      String         @db.VarChar(255)
+  downloaded_at  DateTime       @default(now()) @db.Timestamp(0)
+  users          users          @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "file_download_logs_ibfk_1")
+  form_responses form_responses @relation(fields: [response_id], references: [response_id], onDelete: Cascade, onUpdate: NoAction, map: "file_download_logs_ibfk_2")
+
+  @@index([response_id], map: "idx_download_logs_response")
+  @@index([user_id], map: "idx_download_logs_user")
+}
+
+model form_assignments {
+  assignment_id Int         @id @default(autoincrement())
+  form_id       Int
+  department_id Int
+  assigned_by   Int
+  assigned_at   DateTime    @default(now()) @db.Timestamp(0)
+  forms         forms       @relation(fields: [form_id], references: [form_id], onDelete: Cascade, onUpdate: NoAction, map: "form_assignments_ibfk_1")
+  departments   departments @relation(fields: [department_id], references: [department_id], onDelete: Cascade, onUpdate: NoAction, map: "form_assignments_ibfk_2")
+  users         users       @relation(fields: [assigned_by], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "form_assignments_ibfk_3")
+
+  @@index([assigned_by], map: "assigned_by")
+  @@index([department_id], map: "idx_form_assignments_dept")
+  @@index([form_id], map: "idx_form_assignments_form")
+}
+
+model form_attachments {
+  attachment_id  Int            @id @default(autoincrement())
+  response_id    Int
+  file_path      String         @db.VarChar(255)
+  file_name      String         @db.VarChar(150)
+  file_type      String         @db.VarChar(30)
+  file_size      Int            @db.UnsignedInt
+  description    String?        @db.VarChar(200)
+  uploaded_by    Int
+  uploaded_at    DateTime       @default(now()) @db.Timestamp(0)
+  form_responses form_responses @relation(fields: [response_id], references: [response_id], onDelete: Cascade, onUpdate: NoAction, map: "form_attachments_ibfk_1")
+  users          users          @relation(fields: [uploaded_by], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "form_attachments_ibfk_2")
+
+  @@index([response_id], map: "idx_form_attachments_response")
+  @@index([uploaded_by], map: "idx_form_attachments_uploaded_by")
+}
+
+model form_field_values {
+  value_id       Int            @id @default(autoincrement())
+  response_id    Int
+  field_id       Int
+  value          String?        @db.Text
+  created_at     DateTime       @default(now()) @db.Timestamp(0)
+  form_responses form_responses @relation(fields: [response_id], references: [response_id], onDelete: Cascade, onUpdate: NoAction, map: "form_field_values_ibfk_1")
+  form_fields    form_fields    @relation(fields: [field_id], references: [field_id], onDelete: Cascade, onUpdate: NoAction, map: "form_field_values_ibfk_2")
+
+  @@index([field_id], map: "idx_form_field_values_field")
+  @@index([response_id], map: "idx_form_field_values_response")
+}
+
+model form_fields {
+  field_id          Int                    @id @default(autoincrement())
+  form_id           Int
+  label             String                 @db.VarChar(150)
+  field_type        form_fields_field_type
+  is_required       Boolean                @default(false)
+  options           Json?
+  placeholder       String?                @db.VarChar(150)
+  order_index       Int                    @default(0) @db.UnsignedSmallInt
+  created_at        DateTime               @default(now()) @db.Timestamp(0)
+  form_field_values form_field_values[]
+  forms             forms                  @relation(fields: [form_id], references: [form_id], onDelete: Cascade, onUpdate: NoAction, map: "form_fields_ibfk_1")
+
+  @@index([form_id], map: "idx_form_fields_form_id")
+  @@index([form_id, order_index], map: "idx_form_fields_order")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model form_responses {
+  response_id                               Int                    @id @default(autoincrement())
+  form_id                                   Int
+  user_id                                   Int
+  department_id                             Int
+  quarter_id                                Int
+  status                                    form_responses_status? @default(draft)
+  supervisor_id                             Int
+  reviewed_at                               DateTime?              @db.Timestamp(0)
+  created_at                                DateTime               @default(now()) @db.Timestamp(0)
+  review_comment                            String?                @db.Text
+  file_download_logs                        file_download_logs[]
+  form_attachments                          form_attachments[]
+  form_field_values                         form_field_values[]
+  forms                                     forms                  @relation(fields: [form_id], references: [form_id], onDelete: Cascade, onUpdate: NoAction, map: "form_responses_ibfk_1")
+  users_form_responses_user_idTousers       users                  @relation("form_responses_user_idTousers", fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "form_responses_ibfk_2")
+  departments                               departments            @relation(fields: [department_id], references: [department_id], onDelete: Cascade, onUpdate: NoAction, map: "form_responses_ibfk_3")
+  quarters                                  quarters               @relation(fields: [quarter_id], references: [quarter_id], onDelete: Cascade, onUpdate: NoAction, map: "form_responses_ibfk_4")
+  users_form_responses_supervisor_idTousers users                  @relation("form_responses_supervisor_idTousers", fields: [supervisor_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "form_responses_ibfk_5")
+  form_status_logs                          form_status_logs[]
+  form_submission_logs                      form_submission_logs[]
+  notifications                             notifications[]
+
+  @@index([department_id], map: "idx_form_responses_dept")
+  @@index([form_id], map: "idx_form_responses_form")
+  @@index([quarter_id], map: "idx_form_responses_quarter")
+  @@index([status], map: "idx_form_responses_status")
+  @@index([supervisor_id], map: "idx_form_responses_supervisor")
+  @@index([user_id], map: "idx_form_responses_user")
+}
+
+model form_status_logs {
+  log_id         Int                     @id @default(autoincrement())
+  response_id    Int
+  status         form_status_logs_status
+  changed_by     Int
+  changed_at     DateTime                @default(now()) @db.Timestamp(0)
+  note           String?                 @db.Text
+  form_responses form_responses          @relation(fields: [response_id], references: [response_id], onDelete: Cascade, onUpdate: NoAction, map: "form_status_logs_ibfk_1")
+  users          users                   @relation(fields: [changed_by], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "form_status_logs_ibfk_2")
+
+  @@index([changed_by], map: "idx_status_logs_changed_by")
+  @@index([response_id], map: "idx_status_logs_response")
+}
+
+model form_submission_logs {
+  submission_log_id Int                         @id @default(autoincrement())
+  response_id       Int
+  user_id           Int
+  form_id           Int
+  department_id     Int
+  status            form_submission_logs_status
+  note              String?                     @db.Text
+  created_at        DateTime                    @default(now()) @db.Timestamp(0)
+  form_responses    form_responses              @relation(fields: [response_id], references: [response_id], onDelete: Cascade, onUpdate: NoAction, map: "form_submission_logs_ibfk_1")
+  users             users                       @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "form_submission_logs_ibfk_2")
+  forms             forms                       @relation(fields: [form_id], references: [form_id], onDelete: Cascade, onUpdate: NoAction, map: "form_submission_logs_ibfk_3")
+  departments       departments                 @relation(fields: [department_id], references: [department_id], onDelete: Cascade, onUpdate: NoAction, map: "form_submission_logs_ibfk_4")
+
+  @@index([department_id], map: "idx_submission_logs_dept")
+  @@index([form_id], map: "idx_submission_logs_form")
+  @@index([response_id], map: "idx_submission_logs_response")
+  @@index([user_id], map: "idx_submission_logs_user")
+}
+
+model forms {
+  form_id              Int                    @id @default(autoincrement())
+  title                String                 @db.VarChar(150)
+  description          String?                @db.Text
+  created_by           Int
+  created_at           DateTime               @default(now()) @db.Timestamp(0)
+  form_assignments     form_assignments[]
+  form_fields          form_fields[]
+  form_responses       form_responses[]
+  form_submission_logs form_submission_logs[]
+  users                users                  @relation(fields: [created_by], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "forms_ibfk_1")
+
+  @@index([created_by], map: "idx_forms_created_by")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model invites {
+  invite_id     Int            @id @default(autoincrement())
+  email         String         @db.VarChar(255)
+  first_name    String?        @db.VarChar(100)
+  last_name     String?        @db.VarChar(100)
+  role          invites_role   @default(staff)
+  department_id Int
+  invite_token  String         @db.VarChar(255)
+  invited_by    Int
+  status        invites_status @default(pending)
+  invited_at    DateTime       @default(now()) @db.DateTime(0)
+  accepted_at   DateTime?      @db.DateTime(0)
+  departments   departments    @relation(fields: [department_id], references: [department_id], onDelete: Cascade, onUpdate: NoAction, map: "invites_ibfk_1")
+  users         users          @relation(fields: [invited_by], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "invites_ibfk_2")
+
+  @@index([department_id], map: "department_id")
+  @@index([invited_by], map: "invited_by")
+}
+
+model notifications {
+  notification_id     Int                @id @default(autoincrement())
+  user_id             Int
+  message             String             @db.Text
+  type                notifications_type @default(info)
+  related_response_id Int?
+  is_read             Boolean            @default(false)
+  created_at          DateTime           @default(now()) @db.Timestamp(0)
+  users               users              @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "notifications_ibfk_1")
+  form_responses      form_responses?    @relation(fields: [related_response_id], references: [response_id], onUpdate: NoAction, map: "notifications_ibfk_2")
+
+  @@index([related_response_id], map: "idx_notifications_response")
+  @@index([user_id], map: "idx_notifications_user")
+  @@index([user_id, is_read], map: "idx_notifications_user_read")
+}
+
+model password_resets {
+  id                                        Int                    @id @default(autoincrement())
+  user_id                                   Int
+  reset_token                               String                 @db.VarChar(255)
+  requested_by                              Int?
+  requested_at                              DateTime               @default(now()) @db.DateTime(0)
+  used_at                                   DateTime?              @db.DateTime(0)
+  status                                    password_resets_status @default(pending)
+  users_password_resets_user_idTousers      users                  @relation("password_resets_user_idTousers", fields: [user_id], references: [user_id], onDelete: Cascade, map: "password_resets_ibfk_1")
+  users_password_resets_requested_byTousers users?                 @relation("password_resets_requested_byTousers", fields: [requested_by], references: [user_id], map: "password_resets_ibfk_2")
+
+  @@index([requested_by], map: "requested_by")
+  @@index([user_id], map: "user_id")
+}
+
+model quarters {
+  quarter_id     Int              @id @default(autoincrement())
+  year           Int              @db.SmallInt
+  quarter        quarters_quarter
+  start_date     DateTime         @db.Date
+  end_date       DateTime         @db.Date
+  status         quarters_status  @default(Upcoming)
+  form_responses form_responses[]
+
+  @@unique([year, quarter], map: "year")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model user_login_logs {
+  log_id       Int                          @id @default(autoincrement())
+  user_id      Int?
+  ip_address   String                       @db.VarChar(45)
+  user_agent   String                       @db.VarChar(255)
+  login_status user_login_logs_login_status @default(success)
+  created_at   DateTime                     @default(now()) @db.Timestamp(0)
+
+  @@index([created_at], map: "idx_login_logs_created")
+  @@index([ip_address, created_at], map: "idx_login_logs_ip_created")
+  @@index([login_status], map: "idx_login_logs_status")
+  @@index([user_id], map: "idx_login_logs_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model users {
+  user_id                                             Int                    @id @default(autoincrement())
+  full_name                                           String                 @db.VarChar(100)
+  email                                               String                 @unique(map: "email") @db.VarChar(100)
+  password_hash                                       String                 @db.VarChar(255)
+  role                                                users_role?            @default(staff)
+  department_id                                       Int?
+  invited_by                                          Int
+  is_verified                                         Boolean?               @default(false)
+  last_login                                          DateTime?              @db.Timestamp(0)
+  created_at                                          DateTime               @default(now()) @db.Timestamp(0)
+  file_download_logs                                  file_download_logs[]
+  form_assignments                                    form_assignments[]
+  form_attachments                                    form_attachments[]
+  form_responses_form_responses_user_idTousers        form_responses[]       @relation("form_responses_user_idTousers")
+  form_responses_form_responses_supervisor_idTousers  form_responses[]       @relation("form_responses_supervisor_idTousers")
+  form_status_logs                                    form_status_logs[]
+  form_submission_logs                                form_submission_logs[]
+  forms                                               forms[]
+  invites                                             invites[]
+  notifications                                       notifications[]
+  password_resets_password_resets_user_idTousers      password_resets[]      @relation("password_resets_user_idTousers")
+  password_resets_password_resets_requested_byTousers password_resets[]      @relation("password_resets_requested_byTousers")
+  users                                               users                  @relation("usersTousers", fields: [invited_by], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_users_invited_by")
+  other_users                                         users[]                @relation("usersTousers")
+  departments                                         departments?           @relation(fields: [department_id], references: [department_id], onUpdate: NoAction, map: "users_ibfk_1")
+
+  @@index([invited_by], map: "fk_users_invited_by")
+  @@index([department_id], map: "idx_users_department")
+  @@index([email], map: "idx_users_email")
+  @@index([last_login], map: "idx_users_last_login")
+  @@index([role], map: "idx_users_role")
+}
+
+enum form_status_logs_status {
+  draft
+  submitted
+  approved
+  rejected
+  resubmitted
+}
+
+enum quarters_quarter {
+  Q1
+  Q2
+  Q3
+  Q4
+}
+
+enum form_fields_field_type {
+  text
+  textarea
+  email
+  number
+  date
+  datetime
+  select
+  checkbox
+  radio
+  file
+}
+
+enum notifications_type {
+  info
+  warning
+  success
+  error
+}
+
+enum invites_role {
+  admin
+  supervisor
+  staff
+}
+
+enum user_login_logs_login_status {
+  success
+  failed
+}
+
+enum users_role {
+  admin
+  supervisor
+  staff
+}
+
+enum form_responses_status {
+  draft
+  submitted
+  approved
+  rejected
+  resubmitted
+}
+
+enum form_submission_logs_status {
+  draft
+  submitted
+  approved
+  rejected
+  resubmitted
+}
+
+enum quarters_status {
+  Upcoming
+  Active
+  Closed
+}
+
+enum password_resets_status {
+  pending
+  used
+  expired
+}
+
+enum invites_status {
+  pending
+  accepted
+  expired
+  cancelled
+}
